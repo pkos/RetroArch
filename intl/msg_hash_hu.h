@@ -256,6 +256,8 @@ MSG_HASH(
 
 /* Settings > Video */
 
+#if defined(DINGUX)
+#endif
 
 /* Settings > Video > CRT SwitchRes */
 
@@ -271,6 +273,8 @@ MSG_HASH(
 
 /* Settings > Video > Scaling */
 
+#if defined(DINGUX)
+#endif
 
 /* Settings > Video > Synchronization */
 
@@ -301,6 +305,8 @@ MSG_HASH(
 
 /* Settings > Input > Haptic Feedback/Vibration */
 
+#if defined(DINGUX) && defined(HAVE_LIBSHAKE)
+#endif
 
 /* Settings > Input > Menu Controls */
 
@@ -481,6 +487,8 @@ MSG_HASH(
 
 
 /* Quick Menu > Shaders > Save */
+
+   
 
 
 /* Quick Menu > Shaders > Remove */

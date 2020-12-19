@@ -30,6 +30,7 @@
 #include "frontend/frontend_driver.h"
 
 #include "../font_driver.h"
+#include "libretro.h"
 
 #ifdef HAVE_CONFIG_H
 #include "../../config.h"
@@ -48,6 +49,8 @@
 #define NATIVE_WIDTH 480
 #define NATIVE_HEIGHT 320
 #define NATIVE_ASPECT_RATIO 1.5
+
+#define ALIGN(val, align) (((val) + (align) - 1) & ~((align) - 1))
 
 #define NUM_PAGES 3
 
@@ -83,10 +86,6 @@ typedef struct oga_video
    int fd;
    uint32_t connector_id;
    drmModeModeInfo mode;
-#if 0
-   uint32_t width;
-   uint32_t height;
-#endif
    uint32_t crtc_id;
 
    oga_surface_t* frame_surface;
@@ -104,8 +103,6 @@ typedef struct oga_video
    int msg_width;
    int msg_height;
    char last_msg[128];
-
-   int bpp;
 } oga_video_t;
 
 bool oga_create_display(oga_video_t* vid)
@@ -168,10 +165,6 @@ bool oga_create_display(oga_video_t* vid)
    }
 
    vid->mode   = *mode;
-#if 0
-   vid->width  = mode->hdisplay;
-   vid->height = mode->vdisplay;
-#endif
 
    /* Find encoder */
    for (i = 0; i < resources->count_encoders; i++)
@@ -237,7 +230,7 @@ oga_surface_t* oga_create_surface(int display_fd,
    surface->handle     = args.handle;
    surface->width      = width;
    surface->height     = height;
-   surface->pitch      = args.pitch;
+   surface->pitch      = width * args.bpp / 8;
    surface->rk_format  = rk_format;
 
    if (drmPrimeHandleToFD(display_fd, surface->handle, DRM_RDWR | DRM_CLOEXEC, &surface->prime_fd) < 0)
@@ -352,8 +345,12 @@ static void *oga_gfx_init(const video_info_t *video,
       input_driver_t **input, void **input_data)
 {
    int i;
-   oga_video_t     *vid = NULL;
-   settings_t *settings = config_get_ptr();
+   oga_video_t *vid                     = NULL;
+   settings_t *settings                 = config_get_ptr();
+   struct retro_system_av_info *av_info = video_viewport_get_system_av_info();
+   struct retro_game_geometry  *geom    = &av_info->geometry;
+   int aw                               = ALIGN(geom->base_width, 32);
+   int ah                               = ALIGN(geom->base_height, 32);
 
    frontend_driver_install_signal_handler();
 
@@ -384,13 +381,14 @@ static void *oga_gfx_init(const video_info_t *video,
    }
 
    RARCH_LOG("oga_gfx_init video %dx%d rgb32 %d smooth %d ctx_scaling %d"
-         " input_scale %u force_aspect %d fullscreen %d threaded %d\n",
+         " input_scale %u force_aspect %d fullscreen %d threaded %d base_width %d base_height %d"
+         " max_width %d max_height %d aw %d ah %d\n",
          video->width, video->height, video->rgb32, video->smooth, video->ctx_scaling,
-         video->input_scale, video->force_aspect, video->fullscreen, video->is_threaded);
+         video->input_scale, video->force_aspect, video->fullscreen, video->is_threaded, geom->base_width, geom->base_height,
+         geom->max_width, geom->max_height, aw, ah);
 
    vid->menu_surface = oga_create_surface(vid->fd, NATIVE_WIDTH, NATIVE_HEIGHT, RK_FORMAT_BGRA_8888);
    vid->threaded = video->is_threaded;
-   vid->bpp = video->rgb32 ? 4 : 2;
 
    /*
     * From RGA2 documentation:
@@ -403,7 +401,7 @@ static void *oga_gfx_init(const video_info_t *video,
    vid->scale_mode = video->ctx_scaling << 1 | video->smooth;
    vid->rotation = 0;
 
-   vid->frame_surface = oga_create_surface(vid->fd, NATIVE_WIDTH, NATIVE_HEIGHT, vid->bpp == 4 ? RK_FORMAT_BGRA_8888 : RK_FORMAT_RGB_565);
+   vid->frame_surface = oga_create_surface(vid->fd, geom->max_width, geom->max_height, video->rgb32 ? RK_FORMAT_BGRA_8888 : RK_FORMAT_RGB_565);
    vid->msg_surface   = oga_create_surface(vid->fd, NATIVE_WIDTH, NATIVE_HEIGHT, RK_FORMAT_BGRA_8888);
    vid->last_msg[0]   = 0;
 
@@ -570,7 +568,6 @@ static bool oga_gfx_frame(void *data, const void *frame, unsigned width,
    oga_framebuf_t* page = vid->pages[vid->cur_page];
    oga_surface_t *page_surface = page->surface;
    float aspect_ratio = video_driver_get_aspect_ratio();
-   bool blit_msg = false;
 
    if (unlikely(!frame || width == 0 || height == 0))
       return true;
@@ -582,26 +579,34 @@ static bool oga_gfx_frame(void *data, const void *frame, unsigned width,
    }
 
    if (msg && msg[0] && vid->font)
-      blit_msg = render_msg(vid, msg);
+   {
+        if (!render_msg(vid, msg))
+            msg = NULL;
+   }
 
    rga_clear_surface(page_surface, 0);
 
    if (likely(!video_info->menu_is_alive))
    {
-      int w = pitch / vid->bpp;
-      if (unlikely(w != vid->frame_surface->width || height != vid->frame_surface->height))
+      uint8_t* src = (uint8_t*)frame;
+      uint8_t* dst = (uint8_t*)vid->frame_surface->map;
+      unsigned int blend = video_info->runloop_is_paused ? 0x800105 : 0;
+      oga_rect_t r;
+
+      if (src != dst)
       {
-         oga_destroy_surface(vid->frame_surface);
-         vid->frame_surface = oga_create_surface(vid->fd, w, height, vid->bpp == 4 ? RK_FORMAT_BGRA_8888 : RK_FORMAT_RGB_565);
+         int dst_pitch = vid->frame_surface->pitch;
+         int yy = height;
+
+         while (yy > 0) {
+             memcpy(dst, src, pitch);
+             src += pitch;
+             dst += dst_pitch;
+             --yy;
+         }
       }
 
-      memcpy(vid->frame_surface->map, frame, pitch * height);
-
-      oga_rect_t r;
       oga_calc_bounds(&r, width, height, aspect_ratio);
-
-      unsigned int blend = video_info->runloop_is_paused ? 0x800105 : 0;
-
       oga_blit(vid->frame_surface, 0, 0, width, height,
             page_surface, r.y, r.x, r.h, r.w, vid->rotation, vid->scale_mode, blend);
    }
@@ -622,7 +627,7 @@ static bool oga_gfx_frame(void *data, const void *frame, unsigned width,
    }
 #endif
 
-   if (blit_msg)
+   if (msg)
    {
       oga_blit(vid->msg_surface, 0, 0, vid->msg_width, vid->msg_height,
             page_surface, 0, 0, vid->msg_height, vid->msg_width,
@@ -655,12 +660,6 @@ static void oga_gfx_set_texture_frame(void *data, const void *frame, bool rgb32,
 
    if (vid->menu_surface->width != width || vid->menu_surface->height != height)
    {
-#if 0
-      RARCH_LOG("oga_set_texture_frame rgb32 %d width %hu height"
-            " %hu alpha %f\n",
-            rgb32, width, height, alpha);
-#endif
-
       oga_destroy_surface(vid->menu_surface);
       vid->menu_surface = oga_create_surface(vid->fd, width, height,
             RK_FORMAT_BGRA_8888);
@@ -723,7 +722,7 @@ static bool oga_gfx_set_shader(void *data, enum rarch_shader_type type, const ch
    return false;
 }
 
-void oga_set_rotation(void *data, unsigned rotation)
+static void oga_set_rotation(void *data, unsigned rotation)
 {
    oga_video_t *vid = (oga_video_t*)data;
    if (!vid)
@@ -749,7 +748,21 @@ void oga_set_rotation(void *data, unsigned rotation)
    }
 }
 
-static const video_poke_interface_t oga_poke_interface = {
+static bool oga_get_current_software_framebuffer(void *data, struct retro_framebuffer *framebuffer)
+{
+   oga_video_t *vid = (oga_video_t*)data;
+   if (!vid)
+      return false;
+
+   framebuffer->format = vid->frame_surface->rk_format == RK_FORMAT_BGRA_8888 ?
+      RETRO_PIXEL_FORMAT_XRGB8888 : RETRO_PIXEL_FORMAT_RGB565;
+   framebuffer->data = (uint8_t*)vid->frame_surface->map;
+   framebuffer->pitch = vid->frame_surface->pitch;
+
+   return true;
+}
+
+video_poke_interface_t oga_poke_interface = {
    NULL,
    NULL,
    NULL,
@@ -769,7 +782,7 @@ static const video_poke_interface_t oga_poke_interface = {
    NULL,
    NULL,
    NULL,
-   NULL,
+   oga_get_current_software_framebuffer,
    NULL
 };
 

@@ -49,6 +49,7 @@
 #include "../../defines/ps3_defines.h"
 #include "../../defaults.h"
 #include "../../verbosity.h"
+#include "../../paths.h"
 
 #ifdef __PSL1GHT__
 #define EMULATOR_CONTENT_DIR "SSNE10001"
@@ -206,6 +207,8 @@ static void frontend_ps3_get_environment_settings(int *argc, char *argv[],
       verbosity_enable();
    else
       verbosity_disable();
+
+   dir_check_defaults("custom.ini");
 #endif
 }
 
@@ -329,6 +332,7 @@ static void frontend_ps3_get_environment_settings(int *argc, char *argv[],
       verbosity_enable();
    else
       verbosity_disable();
+   dir_check_defaults("custom.ini");
 #endif
 }
 #endif
@@ -702,6 +706,8 @@ frontend_ctx_driver_t frontend_ctx_ps3 = {
    NULL,                         /* destroy_sighandler_state */
    NULL,                         /* attach_console */
    NULL,                         /* detach_console */
+   NULL,                         /* get_lakka_version */
+   NULL,                         /* set_screen_brightness */
    NULL,                         /* watch_path_for_changes */
    NULL,                         /* check_for_path_changes */
    NULL,                         /* set_sustained_performance_mode */
