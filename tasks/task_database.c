@@ -641,6 +641,7 @@ static int task_database_iterate_playlist(
          db->type            = DATABASE_TYPE_ITERATE_LUTRO;
          break;
       default:
+         db_state->serial[0] = '\0';
          db->type            = DATABASE_TYPE_CRC_LOOKUP;
          return intfstream_file_get_crc(name, 0, SIZE_MAX, &db_state->crc);
    }
@@ -732,15 +733,10 @@ static int database_info_list_iterate_found_match(
       const char *archive_name
       )
 {
-   /* TODO/FIXME - heap allocations are done here to avoid
-    * running out of stack space on systems with a limited stack size.
-    * We should use less fullsize paths in the future so that we don't
-    * need to have all these big char arrays here */
-   size_t str_len                 = PATH_MAX_LENGTH * sizeof(char);
-   char* db_crc                   = (char*)malloc(str_len);
-   char* db_playlist_base_str     = (char*)malloc(str_len);
-   char* db_playlist_path         = (char*)malloc(str_len);
-   char* entry_path_str           = (char*)malloc(str_len);
+   char db_crc[PATH_MAX_LENGTH];
+   char db_playlist_base_str[PATH_MAX_LENGTH];
+   char db_playlist_path[PATH_MAX_LENGTH];
+   char entry_path_str[PATH_MAX_LENGTH];
    char *hash                     = NULL;
    playlist_t   *playlist         = NULL;
    const char         *db_path    =
@@ -756,25 +752,31 @@ static int database_info_list_iterate_found_match(
    entry_path_str[0]              = '\0';
 
    fill_short_pathname_representation_noext(db_playlist_base_str,
-         db_path, str_len);
+         db_path, sizeof(db_playlist_base_str));
 
-   strlcat(db_playlist_base_str, ".lpl", str_len);
+   strlcat(db_playlist_base_str, ".lpl", sizeof(db_playlist_base_str));
 
    if (!string_is_empty(_db->playlist_directory))
       fill_pathname_join(db_playlist_path, _db->playlist_directory,
-            db_playlist_base_str, str_len);
+            db_playlist_base_str, sizeof(db_playlist_path));
 
    playlist_config_set_path(&_db->playlist_config, db_playlist_path);
    playlist = playlist_init(&_db->playlist_config);
 
-   snprintf(db_crc, sizeof(db_crc), "%s|serial", db_state->serial);
+   if (!string_is_empty(db_state->serial))
+      snprintf(db_crc, PATH_MAX_LENGTH * sizeof(char),
+         "%s|serial", db_state->serial);
+   else
+   {
+      snprintf(db_crc, sizeof(db_crc), "%08X|crc", db_info_entry->crc32);
+   }
 
    if (entry_path)
-      strlcpy(entry_path_str, entry_path, str_len);
+      strlcpy(entry_path_str, entry_path, sizeof(entry_path_str));
 
    if (!string_is_empty(archive_name))
       fill_pathname_join_delim(entry_path_str,
-            entry_path_str, archive_name, '#', str_len);
+            entry_path_str, archive_name, '#', sizeof(entry_path_str));
 
    if (core_info_database_match_archive_member(
          db_state->list->elems[db_state->list_index].data) &&
@@ -855,10 +857,6 @@ static int database_info_list_iterate_found_match(
       db_state->list->elems[0] = entry;
    }
 
-   free(db_crc);
-   free(db_playlist_base_str);
-   free(db_playlist_path);
-   free(entry_path_str);
    return 0;
 }
 
