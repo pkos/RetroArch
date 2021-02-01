@@ -153,7 +153,7 @@ static int intfstream_get_serial(intfstream_t *fd, char *serial, const char *fil
    const char *system_name = NULL;
    if (detect_system(fd, &system_name, filename) >= 1)
    {
-      /** Debug: runloop_msg_queue_push(system_name, 0, 180, false, NULL, MESSAGE_QUEUE_ICON_DEFAULT, MESSAGE_QUEUE_CATEGORY_INFO); **/
+
    }
    else
    {
