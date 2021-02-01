@@ -317,19 +317,19 @@ int detect_ps1_game(intfstream_t *fd, char *game_id, const char *filename)
 {
    int pos;
    char raw_game_id[50];
-   char disc_data[150000];
+   char disc_data[60000];
    char hyphen = '-';
 
    /* Load data into buffer and use pointers */
    if (intfstream_seek(fd, 0, SEEK_SET) < 0)
       return false;
   
-   if (intfstream_read(fd, disc_data, 100000) <= 0)
+   if (intfstream_read(fd, disc_data, 60000) <= 0)
       return false;
 
-   disc_data[100000] = '\0';
+   disc_data[60000] = '\0';
 
-   for (pos = 0; pos < 100000; pos++)
+   for (pos = 0; pos < 60000; pos++)
    {
       strncpy(raw_game_id, &disc_data[pos], 12);
 	  raw_game_id[12] = '\0';
@@ -383,18 +383,18 @@ int detect_ps1_game(intfstream_t *fd, char *game_id, const char *filename)
 int detect_psp_game(intfstream_t *fd, char *game_id, const char *filename)
 {
    int pos;
-   char disc_data[150000];
+   char disc_data[40000];
 
    /* Load data into buffer and use pointers */
    if (intfstream_seek(fd, 0, SEEK_SET) < 0)
       return false;
   
-   if (intfstream_read(fd, disc_data, 100000) <= 0)
+   if (intfstream_read(fd, disc_data, 40000) <= 0)
       return false;
 
-   disc_data[100000] = '\0';
+   disc_data[40000] = '\0';
 
-   for (pos = 0; pos < 100000; pos++)
+   for (pos = 0; pos < 40000; pos++)
    {
       strncpy(game_id, &disc_data[pos], 10);
       game_id[10] = '\0';
